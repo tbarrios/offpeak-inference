@@ -13,19 +13,22 @@ from pathlib import Path
 from typing import Optional
 
 try:
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.fastmcp import FastMCP as MCPServer  # MCP SDK 1.x
 except ImportError as exc:  # pragma: no cover
-    raise SystemExit(
-        "OffPeak's MCP server needs the MCP SDK."
-        " Install with: pip install 'offpeak[mcp]'"
-    ) from exc
+    try:
+        from mcp.server.mcpserver import MCPServer  # MCP SDK 2.x
+    except ImportError as inner:  # pragma: no cover
+        raise SystemExit(
+            "OffPeak's MCP server needs the MCP SDK."
+            " Install with: pip install 'offpeak[mcp]'"
+        ) from inner
 
 from offpeak.harness import OffPeakHarness
 
 DB_PATH = os.environ.get("OFFPEAK_DB", str(Path.home() / ".offpeak" / "harness.db"))
 Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
 harness = OffPeakHarness(db_path=DB_PATH)
-mcp = FastMCP("offpeak")
+mcp = MCPServer("offpeak")
 
 
 @mcp.tool()

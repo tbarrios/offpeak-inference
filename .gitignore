@@ -7,3 +7,7 @@ build/
 *.egg-info/
 .DS_Store
 
+.deps/
+.deps/
+.piphome/
+.pipcache/
