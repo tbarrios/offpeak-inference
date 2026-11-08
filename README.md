@@ -1,107 +1,204 @@
-# Off-Peak Inference — Demand-Side Flexibility Harness
+# OffPeak
 
-An open-source harness that makes AI agent workloads *flexible*: it learns each
-user's willingness to let tasks run later, then schedules non-urgent compute in
-cheaper, lower-carbon windows of the grid — without breaking the experience of
-users who need answers immediately.
+**Temporal inference cost arbitrage for AI agents.**
 
-## What it does
+Inference prices rise and fall with grid load — cheap overnight, expensive at evening peak. OffPeak is an open-source harness that lets any agent or LLM app defer non-urgent work to cheap hours, track every dollar saved, and learn how much scheduling flexibility each user actually has.
 
-1. **Decides** for every task: run now, defer to a cheaper hour, or ask the user
-   (only while beliefs are still uncertain).
-2. **Learns the user** via Bayesian updating: accepted deferrals, overrides,
-   direct answers, and wasted immediacy all update per-task-type beliefs about
-   that person's flexibility.
-3. **Learns its own decisions**: after every conversation it scores whether
-   the temporal choice (immediate vs. deferred) matched the user's revealed
-   preference, and feeds that correctness rate back into the policy so repeated
-   mistakes make it more conservative.
-4. **Calibrates reports**: after each report, directional feedback (`right`,
-   `too_much`, or `too_little`) updates a per-user, per-task detail preference.
-   The next report defaults to the learned level without asking an extra
-   question.
-5. **Persists per-user state** so learning continues seamlessly across runs.
-6. **Reports savings** against a duck-curve electricity price schedule.
+> Built for **AGI House Hackathon** · November 2026 · MIT licensed
 
-## Design
+## The problem
 
-### Belief model (per user, per task type)
+AI agents burn tokens at 6 PM — the most expensive hour on the grid. Electricity spot prices routinely swing **3–5x** between overnight troughs and evening peaks, and inference providers increasingly pass those costs through as time-varying $/Mtok pricing. Yet agents run *everything* immediately: deep research, batch summarization, report drafts — work that could just as easily run at 3 AM for 60–70% less.
 
-- `Beta(α, β)` posterior over "probability the user accepts deferral".
-- Conservative prior `Beta(1, 2)`: assume immediacy until shown otherwise.
-- Overrides count 1.5× — a user overriding a deferral is strong evidence.
-- **Hierarchical prior**: a brand-new task type inherits a blend of the base
-  prior and everything already learned about this user, so the harness learns
-  people, not just categories.
+## What OffPeak does
 
-### Decision policy
+- **Temporal pricing connector** — reads a provider's time-varying inference price schedule. A realistic time-of-day "duck curve" placeholder is bundled; swap in a real connector (e.g. Crusoe) when your provider exposes one.
+- **Price-aware scheduling** — for every task, the harness finds the cheapest window before the task's deadline and decides: run now, defer, or ask.
+- **Savings ledger** — tracks actual spend, savings vs. running immediately, and savings vs. the daily peak. Honest numbers only.
+- **Voices the savings** — agents tell users what was saved and what could be saved: *"I can run this at 3:00 AM for 73% less — the same budget buys ~3.5x deeper thinking."*
+- **Learns your flexibility** — every accept/reject of a deferral offer updates a per-category model of your urgency preferences. Once you usually accept, OffPeak auto-defers.
+- **Calibrates reports** — directional feedback updates whether each user wants brief, standard, or detailed output for each task type.
+- **Works with any agent** — MCP-native, plus a clean Python API. Zero required dependencies.
 
-Expected utility of deferring, for learned flexibility `p` and savings ratio `s`:
+## How it works
 
-```
-EU(defer) = p·s − (1−p)·penalty
+```mermaid
+flowchart LR
+    A[Agent / LLM app] -->|submit task| H[OffPeak harness]
+    H --> P[Pricing connector]
+    P -->|price forecast| H
+    H -->|run now? defer? ask?| A
+    H -->|deferred tasks at cheap windows| A
+    H --> L[(savings ledger)]
+    H --> F[flexibility learner]
+    A -->|accept / reject offers| F
+    H -->|savings reports| A
 ```
 
-- If `EU > 0` and the belief is confident → **defer autonomously**.
-- If savings are small → **run now** (never pester users for pennies).
-- If savings are material but the belief is uncertain → **ask once**, then stop
-  asking as evidence accumulates. This is what makes the harness fade into the
-  background.
-- The penalty scales up when the recent temporal-choice correctness rate for a
-  task type falls below 60%: mistakes make the agent more careful.
-
-### Temporal-choice correctness
-
-After each conversation the harness evaluates its own timing choice against
-the user's revealed preference:
-
-| Agent action | User signal | Scored as |
-|---|---|---|
-| Deferred | accepted | correct |
-| Deferred | overrode ("I need it now") | incorrect |
-| Ran now | user engaged immediately | correct |
-| Ran now | user signaled "could have waited" | incorrect |
-| Asked | any answer | not scored (no autonomous mistake possible) |
-
-### Report calibration
-
-The harness tracks a posterior over three detail levels: brief, standard, and
-detailed. `right` reinforces the level just used, `too_much` shifts toward a
-briefer level, and `too_little` shifts toward a more detailed level. New task
-types inherit a pooled detail prior from the user's other tasks. The
-simulation measures exact report calibration against synthetic users' hidden
-preferences; production deployments learn directly from real feedback.
-
-## Quick start
+## Quickstart
 
 ```bash
-python -m offpeak_inference.demo --conversations 40 --state-dir state
-python tests/run_tests.py
+git clone https://github.com/tbarrios/offpeak-inference.git
+cd offpeak-inference
+pip install -e .
+
+# Offline end-to-end demo (no LLM, no network, deterministic)
+offpeak demo
+
+# See today's price curve and the cheapest upcoming window
+offpeak price
+
+# Submit a task for price-aware scheduling
+offpeak submit "Research the market for X" --category research --tokens 80000
 ```
 
-The demo runs three synthetic users with distinct hidden preferences and shows
-beliefs converging, ask rates falling, override rates falling, report
-calibration improving, and savings accruing.
+Sample demo output:
 
-## Mapping to the judging criteria
+```
+≈ OffPeak demo — a day in the life of a cost-aware agent ≈
 
-1. **Agentic loop & functionality** — decide → observe → learn → re-decide is
-   fully closed; the simulation shows behavior changing across runs.
-2. **Energy innovation & simulation** — inference is treated as a dispatchable
-   load against a duck-curve price schedule; savings are measured in dollars
-   via a placeholder tokens→MWh efficiency.
-3. **Evaluation & learning** — objective metrics: ask rate, override rate,
-   autonomous correctness rate, report calibration, and savings vs.
-   theoretical maximum.
-4. **Technical execution** — dependency-free Python, persisted state, runnable
-   demo, test suite.
-5. **Theme alignment** — demand response for AI: flexible compute demand that
-   follows cheap, low-carbon supply.
+[06:00 PM] Submitting two deep-research tasks at evening peak…
+⚡ OffPeak: I can schedule this research task for 03:00 AM at $0.25/Mtok
+   — 71% cheaper than running now ($0.87/Mtok). That's ~$1.24 saved on
+   2,000,000 tokens — the same budget buys ~3.5x deeper thinking at that hour.
+   Want me to defer it?
+> (user accepts)
+🌙 Scheduled for 03:00 AM at $0.25/Mtok — 71% below the price right now…
 
-## Limitations (for an honest demo)
+[03:00 AM] Cheap window arrived — running deferred tasks…
+✓ Ran at 03:00 AM for $0.25/Mtok — saved $1.24 vs running at submit time ($0.87/Mtok).
 
-- Price schedule is a placeholder duck curve; production would use live CAISO /
-  Electricity Maps signals.
-- The tokens→MWh efficiency constant is a placeholder until measured.
-- Correctness and calibration signals are simulated; a live deployment derives
-  them from overrides, explicit feedback, and engagement telemetry.
+[08:00 AM] Morning report:
+💰 OffPeak savings
+   Tasks completed: 2 (2 deferred to cheap windows)
+   ...
+
+[06:00 PM] Next evening — submitting another research task…
+🌙 Auto-scheduled (you usually accept these) for 03:00 AM …
+```
+
+## Use it from any agent (MCP)
+
+OffPeak ships an MCP server, so Codex, Claude, or any MCP-compatible client can use it directly:
+
+```toml
+# ~/.codex/config.toml
+[mcp_servers.offpeak]
+command = "python3"
+args = ["-m", "offpeak.mcp_server"]
+```
+
+Tools exposed: `get_price_forecast`, `submit_task`, `respond_to_offer`, `get_ready_tasks`, `complete_task`, `get_savings_report`.
+
+A typical agent flow:
+1. Agent gets a deep-research question and calls `submit_task`.
+2. The harness finds a 3 AM window at 70% off and returns an offer message.
+3. The agent relays the offer to the user ("want me to schedule deeper thinking for tonight?").
+4. The user accepts → `respond_to_offer`. Overnight, the agent pulls `get_ready_tasks`, runs the work, and reports usage via `complete_task`.
+5. The harness keeps the ledger and learns the user's flexibility.
+
+## Python API
+
+```python
+from datetime import datetime, timedelta
+from offpeak import OffPeakHarness
+
+harness = OffPeakHarness()  # sqlite-backed, persistent
+
+decision = harness.submit(
+    "Deep research on grid-aware inference scheduling",
+    category="research",
+    est_tokens=2_000_000,
+    deadline=datetime.now() + timedelta(hours=12),
+)
+print(decision.message)          # includes the savings offer
+harness.respond_to_offer(decision.task_id, accept=True)
+
+# ... at the cheap window (cron, daemon, or your event loop):
+for task in harness.ready_tasks():
+    output = my_llm(task.prompt)           # your agent runs the work
+    harness.complete_task(task.id, actual_tokens=output.usage)
+
+print(harness.savings_report())
+```
+
+You can also attach a handler and let the harness execute deferred work itself:
+
+```python
+harness.submit(prompt, handler=lambda task: my_llm(task.prompt))
+harness.run_due()  # executes any handler-attached tasks whose window arrived
+```
+
+## Pricing connectors
+
+Connectors live in `offpeak/connectors/` and implement two methods:
+
+```python
+class PricingSource(ABC):
+    def price_at(self, at: datetime) -> float: ...      # $/Mtok at a moment
+    def forecast(self, start, hours=24) -> list[PricePoint]: ...
+```
+
+- **`TimeOfDayPricing`** (placeholder) — a configurable 24h multiplier curve over a base rate, modeled on real grid load: cheap overnight, a solar-driven midday dip, and a steep evening peak.
+- **`CrusoePricing`** (stub) — wire this to Crusoe's temporal inference pricing when available. The integration point is documented in the code.
+
+To add a connector for another provider (OpenRouter, a grid API like WattTime, your own spot-price feed), subclass `PricingSource` and pass it to `OffPeakHarness(pricing=MyPricing())`.
+
+## How savings are computed
+
+Every completed task records three numbers:
+
+| Metric | Meaning |
+|---|---|
+| `cost_usd` | What you actually paid (`tokens × price at run time`) |
+| `savings_vs_now` | What you saved vs. running at submission time — the honest arbitrage number |
+| `savings_vs_peak` | What you saved vs. the day's most expensive hour |
+
+Immediate runs record **zero** deferral savings — no inflated numbers.
+
+## Personal preference learning
+
+The `offpeak` package is the operational harness, CLI, and MCP server. The
+`offpeak_inference` package adds the simulation and learning engine used to
+evaluate demand-response behavior.
+
+- **Urgency flexibility** — a conservative `Beta(1, 2)` belief tracks each
+  user's acceptance probability for each task type. Accepted deferrals,
+  overrides, direct answers, and wasted immediacy update the posterior.
+  Overrides receive 1.5× weight, and new task types inherit a hierarchical
+  prior from the rest of the user's behavior.
+- **Temporal-choice correctness** — every autonomous decision is scored against
+  the user's revealed preference. If recent correctness falls below 60%, the
+  policy becomes more conservative and avoids repeating the same mistake.
+- **Report calibration** — `right`, `too_much`, and `too_little` feedback moves
+  a per-task posterior across brief, standard, and detailed reports. New task
+  types inherit a pooled detail preference.
+- **Persistent learning** — user state is stored as JSON and loaded on the next
+  run, so background decisions continue seamlessly across conversations.
+
+Expected deferral utility is `p × savings − (1 − p) × penalty`, where `p` is the
+learned flexibility. The harness defers when the utility is positive, runs
+immediately when savings are immaterial, and asks only while its belief is
+still uncertain.
+
+## Development
+
+```bash
+pip install -e ".[dev,mcp]"
+python -m unittest discover -v   # or: pytest
+python tests/run_tests.py
+
+# Run the closed-loop learning simulation for three synthetic users
+python -m offpeak_inference.demo --conversations 40 --state-dir state
+```
+
+## Roadmap
+
+- Real temporal-pricing connectors (Crusoe inference, OpenRouter, grid APIs)
+- Carbon-aware scheduling (co-optimize price × grid carbon intensity)
+- Deadline-aware priority queues with multiple concurrent windows
+- Price-elastic model routing (cheap models at peak, deep models overnight)
+
+## License
+
+MIT — see [LICENSE](LICENSE).
