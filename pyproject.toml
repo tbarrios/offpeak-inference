@@ -1,0 +1,8 @@
+[project]
+name = "offpeak-inference"
+version = "0.1.0"
+description = "Demand-side flexibility harness for scheduling inference against grid prices."
+requires-python = ">=3.10"
+
+[project.scripts]
+offpeak-inference = "offpeak_inference.demo:main"
