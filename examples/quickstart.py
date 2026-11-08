@@ -24,7 +24,7 @@ with tempfile.TemporaryDirectory() as tmp:
 
     print(harness.respond_to_offer(decision.task_id, True))
 
-    clock.advance(hours=9)  # 3:00 AM — the cheap window
+    clock.advance(hours=8)  # 2:00 AM — the cheapest window before deadline
     for task in harness.ready_tasks():
         print(harness.complete_task(task.id)["message"])
 

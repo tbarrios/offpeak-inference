@@ -25,8 +25,8 @@ class CrusoePricing(PricingSource):
     def price_at(self, at: datetime) -> float:
         raise NotImplementedError(
             "Fetch Crusoe's temporal pricing schedule here and return the "
-            "$/Mtok effective at the given time. The placeholder connector "
-            "(TimeOfDayPricing) covers the harness until this is wired."
+            "$/Mtok effective at the given time. The default CAISO "
+            "connector covers the harness until this is wired."
         )
 
     def forecast(self, start: datetime, hours: int = 24) -> list[PricePoint]:

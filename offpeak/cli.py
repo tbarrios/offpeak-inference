@@ -105,7 +105,7 @@ def cmd_demo(_: argparse.Namespace) -> None:
             print("> (user accepts)")
             print(harness.respond_to_offer(decision.task_id, True))
             print()
-        clock.advance(hours=9)
+        clock.advance(hours=8)
         print(f"[{clock.now():%I:%M %p}] Cheap window arrived — running deferred tasks…")
         for task in harness.ready_tasks():
             print(harness.complete_task(task.id)["message"])

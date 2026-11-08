@@ -1,9 +1,8 @@
 """Temporal inference pricing: cost curves that drive deferral decisions.
 
 Prices are expressed as USD per 1M tokens ($/Mtok) at a point in time. Real
-inference prices vary with grid load (overnight baseload is cheap, evening
-peak is expensive); the bundled placeholder connector models a realistic
-24-hour "duck curve" over a base rate.
+inference prices can vary with grid load and provider overhead. The default
+CAISO connector derives its curve from official day-ahead trading-hub LMPs.
 """
 
 from __future__ import annotations
@@ -12,9 +11,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-# Illustrative 24-hour multiplier curve over a base $/Mtok rate, loosely
-# modeled on real grid load: cheap overnight, a solar-driven midday dip,
-# and a steep evening peak.
+# Legacy illustrative 24-hour multiplier curve retained for compatibility.
 DEFAULT_TIME_OF_DAY_CURVE: dict[int, float] = {
     0: 0.60, 1: 0.52, 2: 0.45, 3: 0.42, 4: 0.44, 5: 0.55,
     6: 0.75, 7: 0.95, 8: 1.05, 9: 0.98, 10: 0.85, 11: 0.76,

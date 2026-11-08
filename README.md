@@ -8,14 +8,14 @@ Inference prices rise and fall with grid load — cheap overnight, expensive at 
 
 ## The problem
 
-AI agents burn tokens at 6 PM — the most expensive hour on the grid. Electricity spot prices routinely swing **3–5x** between overnight troughs and evening peaks, and inference providers increasingly pass those costs through as time-varying $/Mtok pricing. Yet agents run *everything* immediately: deep research, batch summarization, report drafts — work that could just as easily run at 3 AM for 60–70% less.
+AI agents burn tokens at expensive hours. California's wholesale grid cost already varies materially through the day, and inference providers increasingly pass energy and capacity costs through as time-varying $/Mtok pricing. Yet agents often run *everything* immediately — even when the same work can run in the next low-cost grid window.
 
 ## What OffPeak does
 
-- **Temporal pricing connector** — reads a provider's time-varying inference price schedule. A realistic time-of-day "duck curve" placeholder is bundled; swap in a real connector (e.g. Crusoe) when your provider exposes one.
+- **Temporal pricing connector** — reads a provider's time-varying inference price schedule. The default connector uses an official CAISO day-ahead trading-hub snapshot; swap in a provider connector when your provider exposes one.
 - **Price-aware scheduling** — for every task, the harness finds the cheapest window before the task's deadline and decides: run now, defer, or ask.
 - **Savings ledger** — tracks actual spend, savings vs. running immediately, and savings vs. the daily peak. Honest numbers only.
-- **Voices the savings** — agents tell users what was saved and what could be saved: *"I can run this at 3:00 AM for 73% less — the same budget buys ~3.5x deeper thinking."*
+- **Voices the savings** — agents tell users what was saved and what could be saved: *"I can run this at 2:00 AM for 18% less under the current CAISO schedule."*
 - **Learns your flexibility** — every accept/reject of a deferral offer updates a per-category model of your urgency preferences. Once you usually accept, OffPeak auto-defers.
 - **Calibrates reports** — directional feedback updates whether each user wants brief, standard, or detailed output for each task type.
 - **Works with any agent** — MCP-native, plus a clean Python API. Zero required dependencies.
@@ -58,15 +58,15 @@ Sample demo output:
 ≈ OffPeak demo — a day in the life of a cost-aware agent ≈
 
 [06:00 PM] Submitting two deep-research tasks at evening peak…
-⚡ OffPeak: I can schedule this research task for 03:00 AM at $0.25/Mtok
-   — 71% cheaper than running now ($0.87/Mtok). That's ~$1.24 saved on
-   2,000,000 tokens — the same budget buys ~3.5x deeper thinking at that hour.
+⚡ OffPeak: I can schedule this research task for 02:00 AM at $1.35/Mtok
+   — 18% cheaper than running now ($1.65/Mtok). That's ~$0.60 saved on
+   2,000,000 tokens under the current CAISO snapshot.
    Want me to defer it?
 > (user accepts)
-🌙 Scheduled for 03:00 AM at $0.25/Mtok — 71% below the price right now…
+🌙 Scheduled for 02:00 AM at $1.35/Mtok — 18% below the price right now…
 
-[03:00 AM] Cheap window arrived — running deferred tasks…
-✓ Ran at 03:00 AM for $0.25/Mtok — saved $1.24 vs running at submit time ($0.87/Mtok).
+[02:00 AM] Cheap window arrived — running deferred tasks…
+✓ Ran at 02:00 AM for $1.35/Mtok — saved $0.60 vs running at submit time ($1.65/Mtok).
 
 [08:00 AM] Morning report:
 💰 OffPeak savings
@@ -74,7 +74,7 @@ Sample demo output:
    ...
 
 [06:00 PM] Next evening — submitting another research task…
-🌙 Auto-scheduled (you usually accept these) for 03:00 AM …
+🌙 Auto-scheduled (you usually accept these) for 02:00 AM …
 ```
 
 ## Use it from any agent (MCP)
@@ -139,7 +139,12 @@ class PricingSource(ABC):
     def forecast(self, start, hours=24) -> list[PricePoint]: ...
 ```
 
-- **`TimeOfDayPricing`** (placeholder) — a configurable 24h multiplier curve over a base rate, modeled on real grid load: cheap overnight, a solar-driven midday dip, and a steep evening peak.
+- **`CaisoDayAheadPricing`** (default) — the hourly average of CAISO's NP15, SP15, and ZP26 trading-hub day-ahead LMPs for the 2026-11-08 operating day. The snapshot's low is `$11.7264/MWh` in the 09:00 interval and high is `$55.5284/MWh` in the 21:00 interval. Use `caiso_pricing_for_date(date.today())` to refresh from the official OASIS API.
+- **Inference markup** — modeled inference price is `CAISO LMP × 0.0006 MWh/Mtok × markup`. The default `50×` markup is an explicit, configurable placeholder for provider overhead—not a market quote.
+- **`TimeOfDayPricing`** (legacy) — a configurable 24h multiplier curve retained for compatibility and comparisons.
+
+CAISO source: official OASIS `PRC_LMP` day-ahead market report for trading date
+2026-11-08, averaged across the NP15, SP15, and ZP26 trading hubs.
 - **`CrusoePricing`** (stub) — wire this to Crusoe's temporal inference pricing when available. The integration point is documented in the code.
 
 To add a connector for another provider (OpenRouter, a grid API like WattTime, your own spot-price feed), subclass `PricingSource` and pass it to `OffPeakHarness(pricing=MyPricing())`.

@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 
 from offpeak import voice
 from offpeak.clock import Clock, RealClock
-from offpeak.connectors.placeholder import TimeOfDayPricing
+from offpeak.connectors.caiso import CaisoDayAheadPricing
 from offpeak.costs import CostTracker
 from offpeak.flexibility import FlexibilityLearner
 from offpeak.policy import ASK_USER, DEFER, Decision, Policy
@@ -35,7 +35,7 @@ class OffPeakHarness:
         policy: Policy | None = None,
     ) -> None:
         self.clock = clock or RealClock()
-        self.pricing = pricing or TimeOfDayPricing()
+        self.pricing = pricing or CaisoDayAheadPricing()
         self.policy = policy or Policy()
         self.queue = TaskQueue(db_path)
         self.costs = CostTracker(db_path)

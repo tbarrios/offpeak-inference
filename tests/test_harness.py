@@ -8,7 +8,7 @@ from io import StringIO
 from contextlib import redirect_stdout
 
 from offpeak.clock import SimClock
-from offpeak.connectors.placeholder import TimeOfDayPricing
+from offpeak.connectors.caiso import CaisoDayAheadPricing
 from offpeak.costs import CostTracker
 from offpeak.flexibility import FlexibilityLearner
 from offpeak.harness import OffPeakHarness
@@ -27,24 +27,32 @@ def make_task(**kwargs) -> Task:
 
 
 class PricingTests(unittest.TestCase):
-    def test_placeholder_duck_curve(self) -> None:
-        pricing = TimeOfDayPricing()
-        self.assertAlmostEqual(pricing.price_at(datetime(2026, 1, 1, 3)), 0.60 * 0.42)
-        self.assertAlmostEqual(pricing.price_at(datetime(2026, 1, 1, 19)), 0.60 * 1.55)
+    def test_caiso_day_ahead_snapshot(self) -> None:
+        pricing = CaisoDayAheadPricing()
+        self.assertAlmostEqual(pricing.grid_price_at(datetime(2026, 1, 1, 9)), 11.72642)
+        self.assertAlmostEqual(pricing.grid_price_at(datetime(2026, 1, 1, 21)), 55.52838)
+        self.assertAlmostEqual(
+            pricing.price_at(datetime(2026, 1, 1, 9)),
+            11.72642 * 0.0006 * 50.0,
+        )
+        self.assertAlmostEqual(
+            pricing.price_at(datetime(2026, 1, 1, 21)),
+            55.52838 * 0.0006 * 50.0,
+        )
 
-    def test_cheapest_start_finds_overnight_window(self) -> None:
-        pricing = TimeOfDayPricing()
+    def test_cheapest_start_finds_caiso_low_cost_window(self) -> None:
+        pricing = CaisoDayAheadPricing()
         earliest = datetime(2026, 1, 1, 18)
         found = cheapest_start(
-            pricing, earliest, earliest + timedelta(hours=11), timedelta(minutes=5)
+            pricing, earliest, earliest + timedelta(hours=16), timedelta(minutes=5)
         )
         self.assertIsNotNone(found)
         start, price = found
-        self.assertEqual((start.hour, start.minute), (3, 0))
-        self.assertAlmostEqual(price, 0.60 * 0.42)
+        self.assertEqual((start.hour, start.minute), (9, 0))
+        self.assertAlmostEqual(price, 11.72642 * 0.0006 * 50.0)
 
     def test_no_window_when_deadline_too_tight(self) -> None:
-        pricing = TimeOfDayPricing()
+        pricing = CaisoDayAheadPricing()
         at = datetime(2026, 1, 1, 18)
         self.assertIsNone(cheapest_start(pricing, at, at - timedelta(minutes=1)))
 
@@ -159,21 +167,21 @@ class HarnessTests(unittest.TestCase):
             deadline=self.clock.now() + timedelta(hours=12),
         )
         self.assertEqual(decision.action, ASK_USER)
-        self.assertAlmostEqual(decision.savings_frac, (0.87 - 0.252) / 0.87, places=3)
-        self.assertAlmostEqual(decision.savings_usd, 2_000_000 / 1e6 * 0.618, places=5)
+        self.assertAlmostEqual(decision.savings_frac, (54.94372 - 44.94818) / 54.94372, places=5)
+        self.assertAlmostEqual(decision.savings_usd, 2_000_000 / 1e6 * 0.29986620, places=5)
         self.assertIn("Want me to defer it?", decision.message)
 
         message = self.harness.respond_to_offer(decision.task_id, True)
         self.assertIn("Scheduled", message)
         task = self.harness.tasks("deferred")[0]
-        self.assertEqual(task.scheduled_at.hour, 3)
+        self.assertEqual(task.scheduled_at.hour, 2)
 
-        self.clock.advance(hours=9)  # 3:00 AM — the cheap window
+        self.clock.advance(hours=8)  # 02:00 AM — the cheapest window before deadline
         ready = self.harness.ready_tasks()
         self.assertEqual(len(ready), 1)
         entry = self.harness.complete_task(decision.task_id)
         self.assertTrue(entry["deferred"])
-        self.assertAlmostEqual(entry["savings_vs_now"], 1.236, places=5)
+        self.assertAlmostEqual(entry["savings_vs_now"], 0.59973240, places=5)
         self.assertIn("saved", entry["message"])
 
         report = self.harness.savings_report()
@@ -193,10 +201,10 @@ class HarnessTests(unittest.TestCase):
         self.assertEqual(entry["savings_vs_now"], 0.0)
 
     def test_low_savings_runs_now(self) -> None:
-        self.clock.advance(hours=9)  # 3:00 AM — already cheap
+        self.clock.advance(hours=16)  # 10:00 AM — the CAISO low-cost window
         decision = self.harness.submit(
             "Quick question", est_tokens=1_000,
-            deadline=self.clock.now() + timedelta(hours=6),
+        deadline=self.clock.now() + timedelta(hours=6),
         )
         self.assertEqual(decision.action, RUN_NOW)
         task = self.harness.tasks("now")[0]
@@ -217,7 +225,7 @@ class HarnessTests(unittest.TestCase):
         )
         self.assertEqual(decision.action, DEFER)
         self.assertIn("Auto-scheduled", decision.message)
-        self.assertEqual(self.harness.tasks("deferred")[0].scheduled_at.hour, 3)
+        self.assertEqual(self.harness.tasks("deferred")[0].scheduled_at.hour, 2)
 
     def test_run_due_executes_handlers(self) -> None:
         def handler(task):
@@ -228,7 +236,7 @@ class HarnessTests(unittest.TestCase):
             deadline=self.clock.now() + timedelta(hours=12), handler=handler,
         )
         self.harness.respond_to_offer(decision.task_id, True)
-        self.clock.advance(hours=9)
+        self.clock.advance(hours=8)
         results = self.harness.run_due()
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["actual_tokens"], 123)
@@ -240,12 +248,12 @@ class HarnessTests(unittest.TestCase):
             deadline=self.clock.now() + timedelta(hours=12),
         )
         self.harness.respond_to_offer(decision.task_id, True)
-        self.clock.advance(hours=9)
+        self.clock.advance(hours=8)
         for task in self.harness.ready_tasks():
             self.harness.complete_task(task.id)
         reopened = OffPeakHarness(db_path=self.db, clock=self.clock)
         self.assertEqual(reopened.costs.totals()["tasks"], 1)
-        self.assertAlmostEqual(reopened.costs.totals()["savings_vs_now_usd"], 0.02472, places=5)
+        self.assertAlmostEqual(reopened.costs.totals()["savings_vs_now_usd"], 0.0119946480, places=7)
 
     def test_cli_demo_smoke(self) -> None:
         from offpeak.cli import main

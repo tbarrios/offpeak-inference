@@ -1,37 +1,29 @@
-"""Placeholder time-varying price schedule for the Manage Loads MVP.
+"""CAISO day-ahead schedule for the learning simulation.
 
-The harness consumes any hourly price schedule in $/MWh. For the MVP we use a
-24-hour "duck curve" with a midday solar dip and an evening peak. A real
-deployment would replace `build_schedule` with live signals such as CAISO
-day-ahead prices or Electricity Maps carbon intensity.
+The schedule is the hourly average of CAISO's NP15, SP15, and ZP26 trading-hub
+day-ahead LMPs for the 2026-11-08 operating day. A production deployment can
+replace this with a live OASIS or another grid-price feed.
 """
 
 from __future__ import annotations
+
+from offpeak.connectors.caiso import (
+    CAISO_DAY_AHEAD_HUB_AVERAGE_USD_PER_MWH,
+    DEFAULT_INFERENCE_MARKUP,
+    MWH_PER_MTOK,
+)
 
 
 def price_at_hour(hour: int) -> float:
     """Grid price in $/MWh for a given hour of the day."""
 
-    h = hour % 24
-    if 1 <= h <= 5:
-        return 30.0
-    if 6 <= h <= 8:
-        return 45.0
-    if 9 <= h <= 15:
-        return 35.0
-    if 16 <= h <= 18:
-        return 70.0
-    if 19 <= h <= 21:
-        return 105.0
-    if h == 22:
-        return 80.0
-    return 55.0
+    return CAISO_DAY_AHEAD_HUB_AVERAGE_USD_PER_MWH[hour % 24]
 
 
 def build_schedule(days: int = 1) -> list[float]:
-    """Hour-by-hour price schedule (length 24 * days)."""
+    """Hour-by-hour CAISO grid-price schedule (length 24 * days)."""
 
-    return [price_at_hour(h) for h in range(24 * days)]
+    return [price_at_hour(hour) for hour in range(24 * days)]
 
 
 def best_future(
@@ -43,17 +35,19 @@ def best_future(
     candidates = range(from_index + 1, end)
     if not candidates:
         return schedule[from_index], from_index
-    best_index = min(candidates, key=lambda i: schedule[i])
+    best_index = min(candidates, key=lambda index: schedule[index])
     return schedule[best_index], best_index
 
 
-def cost_usd(tokens: float, price_per_mwh: float) -> float:
-    """Map tokens to modeled energy cost using a placeholder efficiency.
+def cost_usd(
+    tokens: float,
+    price_per_mwh: float,
+    markup: float = DEFAULT_INFERENCE_MARKUP,
+) -> float:
+    """Map tokens to modeled inference cost from CAISO grid prices.
 
-    Placeholder: 1M tokens requires 0.0006 MWh of grid electricity. Swap this
-    constant for a measured value (or a per-model energy profile) in a real
-    deployment.
+    Formula: tokens/Mtok × MWh/Mtok × CAISO LMP ($/MWh) × markup.
     """
 
-    mwh = (tokens / 1_000_000.0) * 0.0006
-    return mwh * price_per_mwh
+    mwh = (tokens / 1_000_000.0) * MWH_PER_MTOK
+    return mwh * price_per_mwh * markup

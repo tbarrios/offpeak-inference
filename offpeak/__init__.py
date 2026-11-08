@@ -3,7 +3,12 @@
 __version__ = "0.1.0"
 
 from offpeak.clock import Clock, RealClock, SimClock
-from offpeak.connectors import CrusoePricing, TimeOfDayPricing
+from offpeak.connectors import (
+    CaisoDayAheadPricing,
+    CrusoePricing,
+    TimeOfDayPricing,
+    caiso_pricing_for_date,
+)
 from offpeak.costs import CostTracker
 from offpeak.flexibility import FlexibilityLearner
 from offpeak.harness import OffPeakHarness
@@ -19,6 +24,7 @@ from offpeak.tasks import Task, TaskQueue
 
 __all__ = [
     "ASK_USER",
+    "CaisoDayAheadPricing",
     "Clock",
     "CostTracker",
     "CrusoePricing",
@@ -36,6 +42,7 @@ __all__ = [
     "Task",
     "TaskQueue",
     "TimeOfDayPricing",
+    "caiso_pricing_for_date",
     "cheapest_start",
     "peak_price",
 ]
